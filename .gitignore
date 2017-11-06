@@ -1,0 +1,7 @@
+/export-logs-from-redis/config.json
+/export-logs-from-redis/vendor
+/export-logs-from-redis/.bundle
+/setup-logs-to-s3/belugacdn-logs-appender.iam.json
+/setup-logs-to-s3/belugacdn-logs-appender.accesskey.json
+/setup-logs-to-s3/vendor
+/setup-logs-to-s3/.bundle
