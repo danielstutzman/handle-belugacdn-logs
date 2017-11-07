@@ -26,6 +26,7 @@ var INFLUXDB_DATABASE_NAME = "belugacdn"
 var INFLUXDB_MEASUREMENT_NAME = "logs"
 var INTEGER_REGEXP = regexp.MustCompile("^[0-9]+$")
 var FLOAT_REGEXP = regexp.MustCompile("^[0-9]+\\.[0-9]+$")
+var FIELD_KEY_REGEXP = regexp.MustCompile("^[a-z_]+$")
 
 func awaitAuthCommand(reader *bufio.Reader, conn net.Conn, expectedPassword string) {
 	log.Println("Awaiting AUTH command...")
@@ -105,6 +106,9 @@ func insertIntoInfluxDb(keyValues map[string]interface{}, influxdbClient *http.C
 				query.WriteString(",")
 			}
 
+			if !FIELD_KEY_REGEXP.MatchString(key) {
+				log.Fatalf("Unexpected characters in field key '%s'", key)
+			}
 			query.WriteString(key)
 			query.WriteString("=")
 
