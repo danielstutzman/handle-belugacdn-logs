@@ -138,6 +138,9 @@ func insertIntoInfluxDb(keyValues map[string]interface{}, influxdbClient *http.C
 	}
 
 	timestamp := keyValues["time"].(string)
+	if !INTEGER_REGEXP.MatchString(timestamp) {
+		log.Fatalf("Unexpected characters in timestamp '%s'", timestamp)
+	}
 	query.WriteString(" ")
 	query.WriteString(timestamp)
 
