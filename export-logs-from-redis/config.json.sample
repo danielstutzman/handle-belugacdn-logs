@@ -1,5 +1,0 @@
-{
-  "host":     "SET_ME",
-  "port":     6379,
-  "password": "SET_ME"
-}
