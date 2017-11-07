@@ -127,7 +127,7 @@ func insertIntoInfluxDb(keyValues map[string]interface{}, influxdbClient *http.C
 				query.WriteString(valueString)
 			} else {
 				query.WriteString("\"")
-				query.WriteString(valueString)
+				query.WriteString(strings.Replace(valueString, "\"", "\\\"", -1))
 				query.WriteString("\"")
 			}
 		}
