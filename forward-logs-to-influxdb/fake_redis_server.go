@@ -24,6 +24,8 @@ var ASCII_LF = byte(10)
 var influxdbBaseUrl = "http://localhost:8086"
 var INFLUXDB_DATABASE_NAME = "belugacdn"
 var INFLUXDB_MEASUREMENT_NAME = "logs"
+var INTEGER_REGEXP = regexp.MustCompile("^[0-9]+$")
+var FLOAT_REGEXP = regexp.MustCompile("^[0-9]+\\.[0-9]+$")
 
 func awaitAuthCommand(reader *bufio.Reader, conn net.Conn, expectedPassword string) {
 	log.Println("Awaiting AUTH command...")
@@ -102,9 +104,32 @@ func insertIntoInfluxDb(keyValues map[string]interface{}, influxdbClient *http.C
 			} else {
 				query.WriteString(",")
 			}
+
 			query.WriteString(key)
 			query.WriteString("=")
-			query.WriteString(fmt.Sprintf("\"%s\"", value))
+
+			valueString, ok := value.(string)
+			if !ok {
+				log.Fatalf("Don't know how to handle value %v type %T", value, value)
+			}
+
+			// Don't consider key=status to be an integer
+			if key == "response_size" || key == "header_size" {
+				if !INTEGER_REGEXP.MatchString(valueString) {
+					log.Fatalf("Expected key=%s to be integer value but was '%s'", key, valueString)
+				}
+				query.WriteString(valueString)
+				query.WriteString("i") // mark as integer
+			} else if key == "duration" {
+				if !FLOAT_REGEXP.MatchString(valueString) {
+					log.Fatalf("Expected key=%s to be float value but was '%s'", key, valueString)
+				}
+				query.WriteString(valueString)
+			} else {
+				query.WriteString("\"")
+				query.WriteString(valueString)
+				query.WriteString("\"")
+			}
 		}
 	}
 
@@ -112,11 +137,11 @@ func insertIntoInfluxDb(keyValues map[string]interface{}, influxdbClient *http.C
 	query.WriteString(" ")
 	query.WriteString(timestamp)
 
+	log.Printf("Query is %s", query.String())
 	resp, err := influxdbClient.Post(
 		influxdbBaseUrl+"/write?db=belugacdn&precision=s",
 		"application/x-www-form-urlencoded",
 		&query)
-	//		bytes.NewBuffer([]byte(INFLUXDB_MEASUREMENT_NAME+" "+query.String()+" "+timestamp)))
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -159,7 +184,6 @@ func expect(reader *bufio.Reader, expected string) {
 	if err != nil {
 		log.Fatal(err)
 	}
-	log.Printf("Got bytes '%v'", bytes)
 
 	if strings.ToUpper(strings.TrimSpace(string(bytes))) != strings.ToUpper(expected) {
 		log.Fatalf("Expected %s but got %s", expected, bytes)
