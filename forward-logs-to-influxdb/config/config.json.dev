@@ -1,0 +1,8 @@
+{
+  "ListenPort": "6380",
+  "InfluxdbHost": "docker.for.mac.localhost",
+  "InfluxdbPort": "8086",
+  "InfluxdbDatabase": "belugacdn",
+  "InfluxdbMeasurement": "logs",
+  "ExpectedPassword": "(password goes here)"
+}

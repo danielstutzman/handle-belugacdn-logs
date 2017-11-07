@@ -1,4 +1,5 @@
-/forward-logs-to-influxdb/config/config.json.dev
+/forward-logs-to-influxdb/config/config.json.prod
+/forward-logs-to-influxdb/redis_input.txt.prod
 /setup-logs-to-s3/belugacdn-logs-appender.iam.json
 /setup-logs-to-s3/belugacdn-logs-appender.accesskey.json
 /setup-logs-to-s3/vendor
