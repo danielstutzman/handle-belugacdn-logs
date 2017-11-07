@@ -1,3 +1,4 @@
+/forward-logs-to-influxdb/config/config.json.dev
 /setup-logs-to-s3/belugacdn-logs-appender.iam.json
 /setup-logs-to-s3/belugacdn-logs-appender.accesskey.json
 /setup-logs-to-s3/vendor

@@ -1,8 +1,8 @@
 *2
 $4
 AUTH
-$62
-(password goes here; make sure to change length in line above)
+$20
+(password goes here)
 *3
 $5
 LPUSH

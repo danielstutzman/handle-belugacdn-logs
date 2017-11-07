@@ -21,12 +21,18 @@ var DOLLAR_INT_REGEXP = regexp.MustCompile("\\$([0-9]+)\r")
 var REDIS_KEY_NAME = "belugacdn"
 var ASCII_CR = byte(13)
 var ASCII_LF = byte(10)
-var influxdbBaseUrl = "http://localhost:8086"
-var INFLUXDB_DATABASE_NAME = "belugacdn"
-var INFLUXDB_MEASUREMENT_NAME = "logs"
 var INTEGER_REGEXP = regexp.MustCompile("^[0-9]+$")
 var FLOAT_REGEXP = regexp.MustCompile("^[0-9]+\\.[0-9]+$")
 var FIELD_KEY_REGEXP = regexp.MustCompile("^[a-z_]+$")
+
+type Config struct {
+	ListenPort          string
+	ExpectedPassword    string
+	InfluxdbHost        string
+	InfluxdbPort        string
+	InfluxdbDatabase    string
+	InfluxdbMeasurement string
+}
 
 func awaitAuthCommand(reader *bufio.Reader, conn net.Conn, expectedPassword string) {
 	log.Println("Awaiting AUTH command...")
@@ -42,7 +48,9 @@ func awaitAuthCommand(reader *bufio.Reader, conn net.Conn, expectedPassword stri
 	}
 }
 
-func awaitLpushCommand(reader *bufio.Reader, conn net.Conn, influxdbClient *http.Client) {
+func awaitLpushCommand(reader *bufio.Reader, conn net.Conn, influxdbClient *http.Client,
+	config *Config) {
+
 	log.Println("Awaiting LPUSH command...")
 	expect(reader, "*3")                                    // LPUSH command has 3 parts
 	expect(reader, "$5")                                    // part 1 has 5 chars
@@ -74,7 +82,7 @@ func awaitLpushCommand(reader *bufio.Reader, conn net.Conn, influxdbClient *http
 
 	keyValues := parseLogJson(logJson)
 	log.Printf("keyValues: %v", keyValues)
-	insertIntoInfluxDb(keyValues, influxdbClient)
+	insertIntoInfluxDb(keyValues, influxdbClient, config)
 
 	_, err = conn.Write([]byte(":1\r\n")) // say the length of the list is 1 long
 	if err != nil {
@@ -91,10 +99,12 @@ func parseLogJson(logJson []byte) map[string]interface{} {
 	return *parsed
 }
 
-func insertIntoInfluxDb(keyValues map[string]interface{}, influxdbClient *http.Client) {
+func insertIntoInfluxDb(keyValues map[string]interface{}, influxdbClient *http.Client,
+	config *Config) {
+
 	var query bytes.Buffer
 
-	query.WriteString(INFLUXDB_MEASUREMENT_NAME)
+	query.WriteString(config.InfluxdbMeasurement)
 
 	var isFirstKey = true
 	for key, value := range keyValues {
@@ -145,10 +155,9 @@ func insertIntoInfluxDb(keyValues map[string]interface{}, influxdbClient *http.C
 	query.WriteString(timestamp)
 
 	log.Printf("Query is %s", query.String())
-	resp, err := influxdbClient.Post(
-		influxdbBaseUrl+"/write?db=belugacdn&precision=s",
-		"application/x-www-form-urlencoded",
-		&query)
+	url := "http://" + config.InfluxdbHost + ":" + config.InfluxdbPort +
+		"/write?db=belugacdn&precision=s"
+	resp, err := influxdbClient.Post(url, "application/x-www-form-urlencoded", &query)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -156,14 +165,14 @@ func insertIntoInfluxDb(keyValues map[string]interface{}, influxdbClient *http.C
 
 	fmt.Println("response Status:", resp.Status)
 	if resp.StatusCode != 200 && resp.StatusCode != 204 {
-		log.Fatalf("Bad status %s from %s", resp.Status, influxdbBaseUrl)
+		log.Fatalf("Bad status %s from POST %s", resp.Status, url)
 	}
 	fmt.Println("response Headers:", resp.Header)
 	body, _ := ioutil.ReadAll(resp.Body)
 	fmt.Println("response Body:", string(body))
 }
 
-func handleConnection(conn net.Conn, expectedPassword string, influxdbClient *http.Client) {
+func handleConnection(conn net.Conn, config *Config, influxdbClient *http.Client) {
 	log.Println("Handling new connection...")
 
 	// Close connection when this function ends
@@ -179,10 +188,10 @@ func handleConnection(conn net.Conn, expectedPassword string, influxdbClient *ht
 	// timeoutDuration := 5 * time.Second
 	// conn.SetReadDeadline(time.Now().Add(timeoutDuration))
 
-	awaitAuthCommand(reader, conn, expectedPassword)
+	awaitAuthCommand(reader, conn, config.ExpectedPassword)
 
 	for {
-		awaitLpushCommand(reader, conn, influxdbClient)
+		awaitLpushCommand(reader, conn, influxdbClient, config)
 	}
 }
 
@@ -213,12 +222,12 @@ func expectDollarInt(reader *bufio.Reader) int {
 	return i
 }
 
-func startRedisListener(expectedPassword string, influxdbClient *http.Client) {
-	listener, err := net.Listen("tcp", ":6380")
+func startRedisListener(config *Config, influxdbClient *http.Client) {
+	listener, err := net.Listen("tcp", ":"+config.ListenPort)
 	if err != nil {
 		log.Fatal(err)
 	}
-	log.Printf("Listening on port 6380...")
+	log.Printf("Listening on port %s...", config.ListenPort)
 
 	defer func() {
 		listener.Close()
@@ -230,21 +239,32 @@ func startRedisListener(expectedPassword string, influxdbClient *http.Client) {
 		if err != nil {
 			log.Fatal(err)
 		}
-		go handleConnection(conn, expectedPassword, influxdbClient)
+		go handleConnection(conn, config, influxdbClient)
 	}
 }
 
 func main() {
 	if len(os.Args) < 1+1 {
-		log.Fatal("First arg should be expected AUTH password")
+		log.Fatal("First arg should be config.json")
 	}
-	expectedPassword := os.Args[1]
+
+	configJson, err := ioutil.ReadFile(os.Args[1])
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	var config = &Config{}
+	if err := json.Unmarshal(configJson, config); err != nil {
+		panic(err)
+	}
 
 	influxdbClient := &http.Client{}
 	//form := url.Values{}
 	//form.Set("q", "CREATE DATABASE "+INFLUXDB_DATABASE_NAME)
-	//resp, err := influxdbClient.PostForm(influxdbBaseUrl+"/query", form)
-	resp, err := influxdbClient.Get(influxdbBaseUrl + "/query?q=" + url.QueryEscape("CREATE DATABASE "+INFLUXDB_DATABASE_NAME))
+	//resp, err := influxdbClient.PostForm(url, form)
+	url := "http://" + config.InfluxdbHost + ":" + config.InfluxdbPort +
+		"/query?q=" + url.QueryEscape("CREATE DATABASE "+config.InfluxdbDatabase)
+	resp, err := influxdbClient.Get(url)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -252,11 +272,11 @@ func main() {
 
 	fmt.Println("response Status:", resp.Status)
 	if resp.StatusCode != 200 {
-		log.Fatalf("Bad status %s from %s", resp.Status, influxdbBaseUrl)
+		log.Fatalf("Bad status %s from %s", resp.Status, url)
 	}
 	fmt.Println("response Headers:", resp.Header)
 	body, _ := ioutil.ReadAll(resp.Body)
 	fmt.Println("response Body:", string(body))
 
-	startRedisListener(expectedPassword, influxdbClient)
+	startRedisListener(config, influxdbClient)
 }
